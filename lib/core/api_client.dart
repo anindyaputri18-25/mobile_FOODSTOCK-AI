@@ -1,27 +1,27 @@
-/// Kesalahan yang ditampilkan ke pengguna.
-///
-/// Versi UI-only: tidak ada pemanggilan jaringan. Kelas ini dipertahankan agar
-/// layar tidak perlu diubah saat nanti terhubung ke backend (buat ulang
-/// ApiClient dan isi FoodstockRepository dengan pemanggilan API).
-class ApiException implements Exception {
-  ApiException({this.statusCode, this.code = 'ERROR', required this.message, this.errors = const {}});
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
-  final int? statusCode;
-  final String code;
-  final String message;
-  final Map<String, List<String>> errors;
+const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000');
 
-  bool get isNetwork => statusCode == null;
-  bool get isUnauthorized => statusCode == 401;
-  bool get isForbidden => statusCode == 403;
-  bool get isPending => code == 'ACCOUNT_PENDING';
+class ApiClient {
+  static String? token;
 
-  String get detail {
-    if (errors.isEmpty) return message;
-    final lines = errors.values.expand((e) => e).toList();
-    return lines.isEmpty ? message : lines.join('\n');
+  static Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+
+  static dynamic _handle(http.Response r) {
+    final body = r.body.isEmpty ? null : jsonDecode(r.body);
+    if (r.statusCode >= 200 && r.statusCode < 300) return body;
+    final msg = (body is Map && body['message'] != null) ? body['message'] : 'Error ${r.statusCode}';
+    throw Exception(msg);
   }
 
-  @override
-  String toString() => 'ApiException($statusCode, $code, $message)';
+  static Future<dynamic> get(String path) async =>
+      _handle(await http.get(Uri.parse('$apiUrl$path'), headers: _headers));
+
+  static Future<dynamic> post(String path, Map<String, dynamic> data) async =>
+      _handle(await http.post(Uri.parse('$apiUrl$path'), headers: _headers, body: jsonEncode(data)));
 }

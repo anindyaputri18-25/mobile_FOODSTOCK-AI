@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 
+import 'api.dart';
 import 'models.dart';
 import 'repository.dart';
+
+export 'api.dart';
 
 enum AuthStatus { unknown, signedOut, signedIn }
 
@@ -44,8 +47,7 @@ class MasterData extends ChangeNotifier {
   Komoditas? komoditasById(int id) => _k[id];
 }
 
-/// Sesi login **contoh** (tanpa server): role dipilih di layar login agar
-/// setiap tampilan per-role bisa dicoba.
+/// Sesi login ke backend Laravel (token Sanctum). Role diambil dari server.
 class SessionController extends ChangeNotifier {
   SessionController({required this.repo, required this.master});
 
@@ -80,25 +82,25 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  static const _demo = {
-    'dinas': ('Siti Rahma', 'Dinas Ketahanan Pangan', 1),
-    'bulog': ('Rina Kartika', 'Perum Bulog', 1),
-    'distributor': ('Agus Pratama', 'CV Tani Makmur', null),
-    'admin': ('Administrator Utama', 'Administrator Sistem', null),
-  };
+  AppUser _userFromJson(Map<String, dynamic> u) => AppUser(
+        id: u['id'] as int,
+        name: u['name'] as String,
+        email: u['email'] as String,
+        role: u['role'] as String,
+        status: (u['status'] ?? 'aktif') as String,
+        instansi: u['instansi'] as String?,
+        wilayahId: u['wilayah_id'] as int?,
+      );
 
-  Future<void> login(String email, String password, {required String role}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 500));
-    final d = _demo[role]!;
-    user = AppUser(
-      id: 1,
-      name: d.$1,
-      email: email.trim().toLowerCase(),
-      role: role,
-      status: 'aktif',
-      instansi: d.$2,
-      wilayahId: d.$3,
-    );
+  /// Parameter [role] dipertahankan agar layar login lama tidak error,
+  /// tetapi tidak dipakai: role ditentukan oleh server.
+  Future<void> login(String email, String password, {String? role}) async {
+    final res = await ApiClient.post('/api/v1/auth/login', {
+      'email': email.trim().toLowerCase(),
+      'password': password,
+    });
+    ApiClient.token = res['token'] as String;
+    user = _userFromJson(res['user'] as Map<String, dynamic>);
     notice = null;
     status = AuthStatus.signedIn;
     await master.load();
@@ -112,10 +114,16 @@ class SessionController extends ChangeNotifier {
     required String password,
     required String confirmation,
   }) async {
+    // Belum ada endpoint register di backend.
     await Future<void>.delayed(const Duration(milliseconds: 500));
   }
 
-  Future<void> refreshUser() async {}
+  Future<void> refreshUser() async {
+    if (ApiClient.token == null) return;
+    final res = await ApiClient.get('/api/v1/auth/me');
+    user = _userFromJson(res as Map<String, dynamic>);
+    notifyListeners();
+  }
 
   void updateUser(AppUser u) {
     user = u;
@@ -123,6 +131,7 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    ApiClient.token = null;
     user = null;
     status = AuthStatus.signedOut;
     showLanding = true;
